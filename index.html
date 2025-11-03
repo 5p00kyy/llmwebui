@@ -6,9 +6,10 @@
   <title>LLM WebUI</title>
   
   <!-- Styles -->
-  <link rel="stylesheet" href="css/styles.css">
   <link rel="stylesheet" href="css/themes.css">
+  <link rel="stylesheet" href="css/styles.css">
   <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/cyberpunk.css">
   
   <!-- Highlight.js for code syntax highlighting -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
@@ -17,24 +18,24 @@
   <!-- Marked.js for markdown rendering -->
   <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
 </head>
-<body class="theme-dark">
-  <div class="app-container">
-    <!-- Sidebar -->
+<body class="theme-black">
+  <div class="app-layout">
+    <!-- Collapsible Sidebar -->
     <aside id="sidebar" class="sidebar">
       <div class="sidebar-header">
-        <h1>LLM WebUI</h1>
-        <button id="newChatBtn" class="btn btn-primary" title="New Conversation (Ctrl+N)">
-          + New Chat
+        <div class="sidebar-title">
+          <span class="sidebar-title-text">Conversations</span>
+        </div>
+        <button id="newChatBtn" class="btn-new-chat" title="New Chat">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
         </button>
       </div>
       
-      <div class="sidebar-search">
-        <input 
-          type="text" 
-          id="searchInput" 
-          placeholder="Search conversations..." 
-          class="search-input"
-        >
+      <div id="tagFilterSection" class="tag-filter-section" style="display: none;">
+        <!-- Tag filters will be rendered here -->
       </div>
       
       <div id="conversationList" class="conversation-list">
@@ -42,46 +43,96 @@
       </div>
     </aside>
 
-    <!-- Main Content -->
-    <main class="main-content">
-      <!-- Header -->
-      <header class="chat-header">
-        <button id="sidebarToggle" class="btn-icon mobile-only" title="Toggle Sidebar">
-          ☰
-        </button>
-        <div class="header-title">
-          <span id="currentModel">Chat</span>
+    <!-- Main Content Area -->
+    <div class="main-area">
+      <!-- Top Header -->
+      <header class="top-header">
+        <div class="header-left">
+          <button id="sidebarToggle" class="btn-icon" title="Toggle Sidebar">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="3" y1="12" x2="21" y2="12"></line>
+              <line x1="3" y1="6" x2="21" y2="6"></line>
+              <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+          </button>
+          <span class="header-title" id="currentModel">LLM WebUI</span>
         </div>
-        <button id="settingsBtn" class="btn-icon" title="Settings (Ctrl+,)">
-          ⚙️
-        </button>
+        
+        <div class="header-center">
+          <select id="modelSelect" class="model-select">
+            <option value="">Select Model...</option>
+          </select>
+        </div>
+        
+        <div class="header-right">
+          <button id="settingsBtn" class="btn-icon" title="Settings">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M12 1v6m0 6v6m5.2-13.2l-4.2 4.2m0 6l4.2 4.2M23 12h-6m-6 0H1m13.2 5.2l-4.2-4.2m0-6l-4.2-4.2"></path>
+            </svg>
+          </button>
+        </div>
       </header>
 
-      <!-- Stats Bar -->
-      <div id="statsBar" class="stats-bar">
+      <!-- Stats Bar (Optional) -->
+      <div id="statsBar" class="stats-bar" style="display: none;">
         <!-- Stats will be rendered here -->
       </div>
 
-      <!-- Messages Container -->
-      <div id="messagesContainer" class="messages-container">
-        <!-- Messages will be rendered here -->
+      <!-- HUD Status Bar -->
+      <div id="hudStatusBar" class="hud-status-bar">
+        <div class="hud-section">
+          <div class="hud-item">
+            <span class="hud-indicator"></span>
+            <span class="hud-label">STATUS</span>
+            <span class="hud-value" id="hudStatus">IDLE</span>
+          </div>
+          <div class="hud-item">
+            <span class="hud-label">MODEL</span>
+            <span class="hud-value" id="hudModel">-</span>
+          </div>
+        </div>
+        <div class="hud-section">
+          <div class="hud-item">
+            <span class="hud-label">TOKENS</span>
+            <span class="hud-value" id="hudTokens">0/0</span>
+          </div>
+          <div class="hud-progress">
+            <div class="hud-progress-fill" id="hudProgress" style="width: 0%"></div>
+          </div>
+        </div>
       </div>
 
-      <!-- Input Area -->
-      <div class="input-area">
+      <!-- Chat Container (Centered) -->
+      <div class="chat-container">
+        <div id="messagesContainer" class="messages-container">
+          <!-- Messages will be rendered here -->
+        </div>
+        
+        <!-- Scroll to Bottom Button -->
+        <button id="scrollToBottom" class="scroll-to-bottom">
+          ↓ SCROLL
+        </button>
+      </div>
+
+      <!-- Input Bar (Fixed Bottom) -->
+      <div class="input-container">
         <div class="input-wrapper">
           <textarea 
             id="messageInput" 
-            placeholder="Type your message... (Shift+Enter for new line)"
+            placeholder="Send a message..."
             class="message-input"
             rows="1"
           ></textarea>
-          <button id="sendButton" class="btn btn-send" title="Send (Enter)">
-            Send
+          <button id="sendButton" class="btn-send" title="Send Message">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="22" y1="2" x2="11" y2="13"></line>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
           </button>
         </div>
       </div>
-    </main>
+    </div>
 
     <!-- Settings Panel -->
     <div id="settingsPanel" class="settings-panel">

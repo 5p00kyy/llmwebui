@@ -7,8 +7,25 @@
  * API Client class
  */
 class APIClient {
-  constructor(endpoint) {
+  constructor(endpoint, apiKey = null) {
     this.endpoint = endpoint;
+    this.apiKey = apiKey;
+  }
+
+  /**
+   * Get request headers including auth if available
+   * @returns {Object} Headers object
+   */
+  getHeaders() {
+    const headers = {
+      'Content-Type': 'application/json'
+    };
+    
+    if (this.apiKey) {
+      headers['Authorization'] = `Bearer ${this.apiKey}`;
+    }
+    
+    return headers;
   }
 
   /**
@@ -19,9 +36,7 @@ class APIClient {
     try {
       const response = await fetch(`${this.endpoint}/models`, {
         method: 'GET',
-        headers: {
-          'Content-Type': 'application/json'
-        }
+        headers: this.getHeaders()
       });
 
       if (!response.ok) {
@@ -62,7 +77,8 @@ class APIClient {
       maxTokens = 2048,
       topP = 0.9,
       stream = true,
-      systemPrompt = null
+      systemPrompt = null,
+      parameterOverrides = {}
     } = options;
 
     // Build messages array with system prompt if provided
@@ -78,11 +94,19 @@ class APIClient {
     const requestBody = {
       model,
       messages: apiMessages,
-      temperature,
-      max_tokens: maxTokens,
-      top_p: topP,
       stream
     };
+    
+    // Only include parameters that are not set to use server defaults
+    if (!parameterOverrides.temperature) {
+      requestBody.temperature = temperature;
+    }
+    if (!parameterOverrides.maxTokens) {
+      requestBody.max_tokens = maxTokens;
+    }
+    if (!parameterOverrides.topP) {
+      requestBody.top_p = topP;
+    }
 
     try {
       const startTime = Date.now();
@@ -92,9 +116,7 @@ class APIClient {
 
       const response = await fetch(`${this.endpoint}/chat/completions`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: this.getHeaders(),
         body: JSON.stringify(requestBody)
       });
 
@@ -220,9 +242,7 @@ class APIClient {
     try {
       const response = await fetch(`${this.endpoint}/models`, {
         method: 'GET',
-        headers: {
-          'Content-Type': 'application/json'
-        }
+        headers: this.getHeaders()
       });
 
       return response.ok;
@@ -238,6 +258,14 @@ class APIClient {
    */
   setEndpoint(endpoint) {
     this.endpoint = endpoint;
+  }
+  
+  /**
+   * Update API key
+   * @param {string} apiKey - New API key
+   */
+  setApiKey(apiKey) {
+    this.apiKey = apiKey;
   }
 
   /**
@@ -259,7 +287,7 @@ export function createClientFromStorage(storage) {
   if (!endpoint) {
     throw new Error('No active endpoint configured');
   }
-  return new APIClient(endpoint.url);
+  return new APIClient(endpoint.url, endpoint.apiKey);
 }
 
 export default APIClient;

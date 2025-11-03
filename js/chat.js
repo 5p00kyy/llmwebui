@@ -18,23 +18,59 @@ class ChatManager {
     this.sendButton = null;
     this.currentConversationId = null;
     this.apiClient = null;
+    this.parameterManager = null;
+    this.ragManager = null;
+    this.modelManager = null;
     this.isGenerating = false;
     this.currentMessageElement = null;
+    
+    // Scroll management
+    this.scrollToBottomBtn = null;
+    this.isUserScrolling = false;
+    this.scrollTimeout = null;
+    
+    // HUD elements
+    this.hudStatus = null;
+    this.hudModel = null;
+    this.hudTokens = null;
+    this.hudProgress = null;
+    
+    // Generation stats
+    this.generationStartTime = null;
+    this.currentTokens = 0;
+    this.estimatedTotal = 0;
   }
 
   /**
    * Initialize chat interface
    * @param {Object} elements - DOM elements
    * @param {APIClient} apiClient - API client instance
+   * @param {Object} managers - Optional manager instances
    */
-  initialize(elements, apiClient) {
+  initialize(elements, apiClient, managers = {}) {
     this.messagesContainer = elements.messagesContainer;
     this.inputField = elements.inputField;
     this.sendButton = elements.sendButton;
     this.apiClient = apiClient;
+    this.parameterManager = managers.parameterManager;
+    this.ragManager = managers.ragManager;
+    this.modelManager = managers.modelManager;
+    
+    // Get HUD elements
+    this.hudStatus = document.getElementById('hudStatus');
+    this.hudModel = document.getElementById('hudModel');
+    this.hudTokens = document.getElementById('hudTokens');
+    this.hudProgress = document.getElementById('hudProgress');
+    
+    // Get scroll button
+    this.scrollToBottomBtn = document.getElementById('scrollToBottom');
 
     // Set up event listeners
     this.setupEventListeners();
+    this.setupScrollManagement();
+    
+    // Initialize HUD
+    this.updateHUD();
   }
 
   /**
@@ -60,6 +96,105 @@ class ChatManager {
         this.inputField.style.height = 'auto';
         this.inputField.style.height = this.inputField.scrollHeight + 'px';
       });
+    }
+    
+    // Scroll to bottom button
+    if (this.scrollToBottomBtn) {
+      this.scrollToBottomBtn.addEventListener('click', () => {
+        this.scrollToBottom(true);
+      });
+    }
+  }
+  
+  /**
+   * Set up scroll management
+   */
+  setupScrollManagement() {
+    if (!this.messagesContainer) return;
+    
+    // Get the chat container (parent of messages container)
+    const chatContainer = this.messagesContainer.parentElement;
+    if (!chatContainer) return;
+    
+    // Listen for scroll events
+    chatContainer.addEventListener('scroll', () => {
+      this.handleScroll();
+    });
+  }
+  
+  /**
+   * Handle scroll events
+   */
+  handleScroll() {
+    if (!this.messagesContainer) return;
+    
+    const chatContainer = this.messagesContainer.parentElement;
+    if (!chatContainer) return;
+    
+    const scrollTop = chatContainer.scrollTop;
+    const scrollHeight = chatContainer.scrollHeight;
+    const clientHeight = chatContainer.clientHeight;
+    
+    // Calculate distance from bottom
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+    
+    // During streaming, be extremely persistent with auto-scroll
+    // Only mark as user scrolling if they've scrolled significantly up
+    if (this.isGenerating) {
+      // During generation, only disable auto-scroll if user scrolls up more than 200px
+      this.isUserScrolling = distanceFromBottom > 200;
+    } else {
+      // When not streaming, use a more conservative threshold
+      this.isUserScrolling = distanceFromBottom > 100;
+    }
+    
+    // Show/hide scroll to bottom button
+    if (this.scrollToBottomBtn) {
+      if (this.isUserScrolling && distanceFromBottom > 150) {
+        this.scrollToBottomBtn.classList.add('visible');
+      } else {
+        this.scrollToBottomBtn.classList.remove('visible');
+      }
+    }
+  }
+  
+  /**
+   * Update HUD status bar
+   */
+  updateHUD(status = null) {
+    const hudBar = document.getElementById('hudStatusBar');
+    
+    if (status) {
+      if (this.hudStatus) {
+        this.hudStatus.textContent = status;
+      }
+      
+      // Set data attribute for streaming animation
+      if (hudBar) {
+        hudBar.setAttribute('data-status', status);
+      }
+    }
+    
+    // Update model
+    if (this.hudModel && this.modelManager) {
+      const currentModel = this.modelManager.getCurrentModel();
+      this.hudModel.textContent = currentModel || '-';
+    }
+    
+    // Update tokens - use context window from stats
+    const conversation = this.getCurrentConversation();
+    if (this.hudTokens && conversation) {
+      const currentStats = stats.getStats();
+      const contextWindow = currentStats.contextLimit || 8192; // Default to 8192 if not set
+      const contextUsed = currentStats.contextUsed || 0;
+      
+      this.hudTokens.textContent = `${contextUsed}/${contextWindow}`;
+      
+      // Update progress bar
+      if (this.hudProgress) {
+        const percentage = Math.min((contextUsed / contextWindow) * 100, 100);
+        this.hudProgress.style.width = `${percentage}%`;
+      }
     }
   }
 
@@ -92,6 +227,9 @@ class ChatManager {
 
     // Scroll to bottom
     this.scrollToBottom();
+    
+    // Update HUD
+    this.updateHUD();
   }
 
   /**
@@ -110,6 +248,7 @@ class ChatManager {
     }
 
     stats.clear();
+    this.updateHUD();
 
     return conversation;
   }
@@ -125,9 +264,8 @@ class ChatManager {
 
     // Get or create conversation
     if (!this.currentConversationId) {
-      const settings = storage.getSettings();
-      const model = settings.defaultModel;
-      const systemPrompt = settings.systemPrompts[model] || '';
+      const model = this.modelManager?.getCurrentModel() || 'default';
+      const systemPrompt = this.parameterManager?.get('systemPrompt') || '';
       this.newConversation(model, systemPrompt);
     }
 
@@ -137,23 +275,49 @@ class ChatManager {
       return;
     }
 
-    // Add user message
+    // Enhance message with RAG context if available
+    let messageContent = text;
+    if (this.ragManager) {
+      const activeDocsCount = this.ragManager.getActiveDocuments().length;
+      if (activeDocsCount > 0) {
+        const relevantChunks = this.ragManager.retrieveContext(text);
+        if (relevantChunks.length > 0) {
+          const context = this.ragManager.formatContext(relevantChunks);
+          messageContent = context + 'User Query: ' + text;
+        }
+      }
+    }
+
+    // Add user message (save original text for display)
     const userMessage = {
       role: 'user',
       content: text
     };
 
     await this.renderMessage(userMessage);
-    storage.addMessage(this.currentConversationId, userMessage);
+    
+    // Save the enhanced message for API but display original
+    const apiMessage = {
+      role: 'user',
+      content: messageContent
+    };
+    
+    // Store the message before generating response
+    const updatedConversation = storage.addMessage(this.currentConversationId, apiMessage);
+    
+    if (!updatedConversation) {
+      console.error('Failed to save message to storage');
+      return;
+    }
 
     // Update conversation title from first message
-    if (conversation.messages.length === 0) {
-      conversation.title = generateTitle(text);
-      storage.saveConversation(conversation);
+    if (updatedConversation.messages.length === 1) {
+      updatedConversation.title = generateTitle(text);
+      storage.saveConversation(updatedConversation);
       
       // Notify sidebar to update
       window.dispatchEvent(new CustomEvent('conversationUpdated', {
-        detail: { conversationId: conversation.id }
+        detail: { conversationId: updatedConversation.id }
       }));
     }
 
@@ -161,8 +325,8 @@ class ChatManager {
     this.inputField.value = '';
     this.inputField.style.height = 'auto';
 
-    // Generate response
-    await this.generateResponse(conversation);
+    // Generate response with the updated conversation
+    await this.generateResponse(updatedConversation);
   }
 
   /**
@@ -173,6 +337,11 @@ class ChatManager {
     this.isGenerating = true;
     this.sendButton?.setAttribute('disabled', 'true');
     stats.startGeneration();
+    
+    // Update HUD status
+    this.updateHUD('STREAMING');
+    this.generationStartTime = Date.now();
+    this.currentTokens = 0;
 
     // Create assistant message element
     const assistantMessage = {
@@ -184,24 +353,38 @@ class ChatManager {
     this.currentMessageElement = messageElement;
 
     try {
-      const settings = storage.getSettings();
+      // Get current parameters
+      const params = this.parameterManager?.getAll() || {};
+      const currentModel = this.modelManager?.getCurrentModel();
+      
+      // Get fresh conversation from storage to ensure we have the latest messages
+      const freshConversation = storage.getConversation(this.currentConversationId);
+      if (!freshConversation) {
+        throw new Error('Conversation not found');
+      }
       
       // Prepare messages for API
-      const messages = conversation.messages.map(m => ({
+      const messages = freshConversation.messages.map(m => ({
         role: m.role,
         content: m.content
       }));
+
+      // Validate that we have messages to send
+      if (!messages || messages.length === 0) {
+        throw new Error('No messages to send. The conversation may not have been saved properly.');
+      }
 
       // Generate response with streaming
       const response = await this.apiClient.chatCompletion(
         messages,
         {
-          model: conversation.model || settings.defaultModel,
-          temperature: settings.preferences.temperature,
-          maxTokens: settings.preferences.maxTokens,
-          topP: settings.preferences.topP,
-          stream: settings.preferences.streamingEnabled,
-          systemPrompt: conversation.systemPrompt
+          model: currentModel || freshConversation.model,
+          temperature: params.temperature ?? 0.7,
+          maxTokens: params.maxTokens ?? 2048,
+          topP: params.topP ?? 0.9,
+          stream: true,
+          systemPrompt: params.systemPrompt || freshConversation.systemPrompt,
+          parameterOverrides: params.useServerDefaults || {}
         },
         // onChunk callback
         async (chunk, fullContent) => {
@@ -220,10 +403,20 @@ class ChatManager {
 
       // Final render with code highlighting
       await this.updateStreamingMessage(messageElement, response.content, true);
+      
+      // Remove streaming badge
+      const statusBadge = messageElement.querySelector('.status-badge');
+      if (statusBadge) {
+        statusBadge.innerHTML = '<span class="status-icon"></span>COMPLETE';
+        statusBadge.classList.remove('streaming');
+      }
 
       // Update context stats
       const updatedConversation = storage.getConversation(this.currentConversationId);
       stats.updateContextFromMessages(updatedConversation.messages);
+      
+      // Update HUD
+      this.updateHUD('IDLE');
 
     } catch (error) {
       console.error('Failed to generate response:', error);
@@ -235,11 +428,19 @@ class ChatManager {
       
       // Save error message
       storage.addMessage(this.currentConversationId, assistantMessage);
+      
+      // Update HUD
+      this.updateHUD('ERROR');
     } finally {
       this.isGenerating = false;
       this.sendButton?.removeAttribute('disabled');
       this.currentMessageElement = null;
       stats.endGeneration();
+      
+      // Update HUD to idle if not error
+      if (this.hudStatus && this.hudStatus.textContent !== 'ERROR') {
+        this.updateHUD('IDLE');
+      }
     }
   }
 
@@ -253,9 +454,32 @@ class ChatManager {
     const messageDiv = document.createElement('div');
     messageDiv.className = `message message-${message.role}`;
 
+    // Message header with role and status
+    const headerDiv = document.createElement('div');
+    headerDiv.className = 'message-header';
+    
+    const roleContainer = document.createElement('div');
+    roleContainer.className = 'message-role-container';
+    
     const roleDiv = document.createElement('div');
     roleDiv.className = 'message-role';
-    roleDiv.textContent = message.role === 'user' ? 'You' : 'Assistant';
+    roleDiv.textContent = message.role === 'user' ? 'USER' : 'ASSISTANT';
+    roleContainer.appendChild(roleDiv);
+    
+    // Add status badge for streaming messages
+    if (isStreaming && message.role === 'assistant') {
+      const statusDiv = document.createElement('div');
+      statusDiv.className = 'message-status';
+      statusDiv.innerHTML = `
+        <span class="status-badge streaming">
+          <span class="status-icon"></span>
+          STREAMING
+        </span>
+      `;
+      roleContainer.appendChild(statusDiv);
+    }
+    
+    headerDiv.appendChild(roleContainer);
 
     const contentDiv = document.createElement('div');
     contentDiv.className = 'message-content';
@@ -271,31 +495,82 @@ class ChatManager {
         addCopyButtons(contentDiv);
       } else if (isStreaming) {
         // Show cursor for streaming
-        contentDiv.innerHTML = '<span class="streaming-cursor">▊</span>';
+        contentDiv.innerHTML = '<span class="streaming-cursor" id="stream-cursor">▊</span>';
       }
     }
 
-    const actionsDiv = document.createElement('div');
-    actionsDiv.className = 'message-actions';
-
+    // Create metadata section
+    const metadataDiv = document.createElement('div');
+    metadataDiv.className = 'message-metadata';
+    
+    const metadataLeft = document.createElement('div');
+    metadataLeft.className = 'metadata-left';
+    
+    // Add timestamp
+    const timestamp = new Date().toLocaleTimeString('en-US', { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+    
+    if (message.role === 'user') {
+      const charCount = message.content?.length || 0;
+      metadataLeft.innerHTML = `
+        <div class="metadata-item">
+          <span class="metadata-label">SENT</span>
+          <span class="metadata-value">${timestamp}</span>
+        </div>
+        <div class="metadata-item">
+          <span class="metadata-label">CHARS</span>
+          <span class="metadata-value">${charCount}</span>
+        </div>
+      `;
+    } else {
+      const tokenCount = Math.floor((message.content?.length || 0) / 4);
+      metadataLeft.innerHTML = `
+        <div class="metadata-item">
+          <span class="metadata-label">MODEL</span>
+          <span class="metadata-value">${this.modelManager?.getCurrentModel() || 'unknown'}</span>
+        </div>
+        <div class="metadata-item">
+          <span class="metadata-label">TOKENS</span>
+          <span class="metadata-value token-counter">${tokenCount}</span>
+        </div>
+      `;
+      
+      if (isStreaming) {
+        metadataLeft.innerHTML += `
+          <div class="metadata-item">
+            <span class="metadata-label">SPEED</span>
+            <span class="metadata-value" id="stream-speed-${Date.now()}">-- tok/s</span>
+          </div>
+        `;
+      }
+    }
+    
+    const metadataRight = document.createElement('div');
+    metadataRight.className = 'metadata-right';
+    
     // Copy button
     const copyBtn = document.createElement('button');
     copyBtn.className = 'message-action-btn';
     copyBtn.title = 'Copy message';
-    copyBtn.innerHTML = '📋';
+    copyBtn.textContent = 'COPY';
     copyBtn.addEventListener('click', async () => {
       const success = await copyToClipboard(message.content);
       if (success) {
-        copyBtn.innerHTML = '✓';
-        setTimeout(() => copyBtn.innerHTML = '📋', 2000);
+        copyBtn.textContent = '✓ COPIED';
+        setTimeout(() => copyBtn.textContent = 'COPY', 2000);
       }
     });
+    
+    metadataRight.appendChild(copyBtn);
+    
+    metadataDiv.appendChild(metadataLeft);
+    metadataDiv.appendChild(metadataRight);
 
-    actionsDiv.appendChild(copyBtn);
-
-    messageDiv.appendChild(roleDiv);
+    messageDiv.appendChild(headerDiv);
     messageDiv.appendChild(contentDiv);
-    messageDiv.appendChild(actionsDiv);
+    messageDiv.appendChild(metadataDiv);
 
     if (this.messagesContainer) {
       this.messagesContainer.appendChild(messageDiv);
@@ -320,22 +595,93 @@ class ChatManager {
       const rendered = await renderMarkdownWithHighlight(content);
       contentDiv.innerHTML = rendered.innerHTML;
       addCopyButtons(contentDiv);
+      
+      // Update token count in metadata
+      const tokenCount = Math.floor(content.length / 4);
+      const tokenCounter = messageElement.querySelector('.token-counter');
+      if (tokenCounter) {
+        tokenCounter.textContent = tokenCount;
+      }
+      
+      // Final scroll to ensure everything is visible
+      this.scrollToBottomSmooth();
     } else {
       // Quick update during streaming (plain text with cursor)
       const escapedContent = escapeHtml(content);
       contentDiv.innerHTML = escapedContent + '<span class="streaming-cursor">▊</span>';
+      
+      // Update token count live
+      this.currentTokens = Math.floor(content.length / 4);
+      const tokenCounter = messageElement.querySelector('.token-counter');
+      if (tokenCounter) {
+        tokenCounter.textContent = this.currentTokens;
+      }
+      
+      // Update speed indicator
+      if (this.generationStartTime) {
+        const elapsed = (Date.now() - this.generationStartTime) / 1000;
+        const speed = this.currentTokens / elapsed;
+        const speedElement = messageElement.querySelector('[id^="stream-speed-"]');
+        if (speedElement && speed > 0) {
+          speedElement.textContent = `${speed.toFixed(1)} tok/s`;
+        }
+      }
+      
+      // Scroll to bottom during streaming to keep text visible
+      this.scrollToBottomSmooth();
     }
-
-    this.scrollToBottom();
   }
 
   /**
    * Scroll to bottom of messages
+   * @param {boolean} smooth - Whether to use smooth scrolling
    */
-  scrollToBottom() {
-    if (this.messagesContainer) {
-      this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
+  scrollToBottom(smooth = false) {
+    if (!this.messagesContainer) return;
+    
+    const chatContainer = this.messagesContainer.parentElement;
+    if (!chatContainer) return;
+    
+    if (smooth) {
+      // Smooth scroll when user clicks button
+      chatContainer.scrollTo({
+        top: chatContainer.scrollHeight,
+        behavior: 'smooth'
+      });
+      
+      // Reset user scrolling state
+      this.isUserScrolling = false;
+      if (this.scrollToBottomBtn) {
+        this.scrollToBottomBtn.classList.remove('visible');
+      }
+    } else {
+      // Instant scroll for initial messages
+      requestAnimationFrame(() => {
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+      });
     }
+  }
+  
+  /**
+   * Smooth scroll to bottom during streaming
+   * Only scrolls if user hasn't manually scrolled up
+   */
+  scrollToBottomSmooth() {
+    if (!this.messagesContainer || this.isUserScrolling) return;
+    
+    const chatContainer = this.messagesContainer.parentElement;
+    if (!chatContainer) return;
+    
+    // Use requestAnimationFrame for smooth, performant scrolling
+    requestAnimationFrame(() => {
+      const targetScroll = chatContainer.scrollHeight;
+      const currentScroll = chatContainer.scrollTop;
+      
+      // Only scroll if we're not already at the bottom
+      if (targetScroll - currentScroll > 5) {
+        chatContainer.scrollTop = targetScroll;
+      }
+    });
   }
 
   /**

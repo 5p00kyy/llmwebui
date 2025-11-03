@@ -20,10 +20,11 @@ const DEFAULT_SETTINGS = {
       id: generateUUID(),
       name: 'Local llama-swap',
       url: 'http://192.168.0.113:8080/v1',
+      apiKey: null,
       active: true
     }
   ],
-  theme: 'dark',
+  theme: 'black',
   defaultModel: null,
   systemPrompts: {},
   preferences: {
@@ -32,7 +33,15 @@ const DEFAULT_SETTINGS = {
     maxTokens: 2048,
     topP: 0.9,
     showStats: true
-  }
+  },
+  parameterOverrides: {
+    temperature: false,
+    topP: false,
+    maxTokens: false,
+    presencePenalty: false,
+    frequencyPenalty: false
+  },
+  modelConfigs: {}
 };
 
 /**
@@ -375,6 +384,104 @@ class Storage {
         msg.content.toLowerCase().includes(lowerQuery)
       );
     });
+  }
+
+  /**
+   * Generic get method for arbitrary data
+   * @param {string} key - Storage key (can be dotted path like 'parameters.temperature')
+   * @returns {*} Stored value or null
+   */
+  get(key) {
+    const value = localStorage.getItem(`llmwebui_${key}`);
+    if (value === null) return null;
+    try {
+      return JSON.parse(value);
+    } catch {
+      return value;
+    }
+  }
+
+  /**
+   * Generic set method for arbitrary data
+   * @param {string} key - Storage key (can be dotted path like 'parameters.temperature')
+   * @param {*} value - Value to store
+   */
+  set(key, value) {
+    try {
+      localStorage.setItem(`llmwebui_${key}`, JSON.stringify(value));
+    } catch (err) {
+      console.error('Failed to save to storage:', err);
+    }
+  }
+
+  /**
+   * Get model configuration
+   * @param {string} modelId - Model ID
+   * @returns {Object|null} Model configuration or null
+   */
+  getModelConfig(modelId) {
+    const settings = this.getSettings();
+    return settings.modelConfigs[modelId] || null;
+  }
+
+  /**
+   * Save model configuration
+   * @param {string} modelId - Model ID
+   * @param {Object} config - Model configuration
+   * @returns {Object} Updated settings
+   */
+  saveModelConfig(modelId, config) {
+    const settings = this.getSettings();
+    if (!settings.modelConfigs) {
+      settings.modelConfigs = {};
+    }
+    settings.modelConfigs[modelId] = {
+      ...config,
+      updated: Date.now()
+    };
+    return this.saveSettings(settings);
+  }
+
+  /**
+   * Delete model configuration
+   * @param {string} modelId - Model ID
+   * @returns {Object} Updated settings
+   */
+  deleteModelConfig(modelId) {
+    const settings = this.getSettings();
+    if (settings.modelConfigs && settings.modelConfigs[modelId]) {
+      delete settings.modelConfigs[modelId];
+      return this.saveSettings(settings);
+    }
+    return settings;
+  }
+
+  /**
+   * Check if model has custom configuration
+   * @param {string} modelId - Model ID
+   * @returns {boolean} True if model has custom config
+   */
+  hasModelConfig(modelId) {
+    const settings = this.getSettings();
+    return !!(settings.modelConfigs && settings.modelConfigs[modelId]);
+  }
+
+  /**
+   * Get all model configurations
+   * @returns {Object} All model configs
+   */
+  getAllModelConfigs() {
+    const settings = this.getSettings();
+    return settings.modelConfigs || {};
+  }
+
+  /**
+   * Reset model to global defaults
+   * @param {string} modelId - Model ID
+   * @returns {Object} Updated settings
+   */
+  resetModelToDefaults(modelId) {
+    return this.deleteModelConfig(modelId);
   }
 }
 
