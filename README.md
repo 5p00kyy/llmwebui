@@ -4,22 +4,63 @@ A lightweight, custom web interface for interacting with local AI models through
 
 ## Features
 
-### Core Functionality
-- 💬 **Chat Interface** - Clean, intuitive chat experience with streaming responses
-- 📝 **Conversation History** - Persistent storage of all conversations using localStorage
-- 🔄 **Multiple API Endpoints** - Manage and switch between different API endpoints
-- 🤖 **Model Selection** - Dynamic model selection from connected endpoints
-- ⚙️ **System Prompts** - Configure custom system prompts per model
-- 📊 **Real-time Stats** - Track context usage, token generation speed, and response times
-- 🎨 **Markdown Rendering** - Full markdown support with code syntax highlighting
-- 🌓 **Theme Support** - Dark and light themes
-- 📤 **Export/Import** - Save and restore conversations
+### 🎨 **Professional UI Design**
+- **Pure Black/Grey Monochrome Theme** - Sleek, distraction-free interface inspired by modern AI tools
+- **Three Theme Variants** - Black (OLED-optimized), Dark (charcoal), Light
+- **Smooth Animations** - Polished transitions and micro-interactions
+- **Responsive Design** - Perfect experience on desktop and mobile
+- **High Contrast Typography** - Optimized readability with carefully chosen grey tones
+
+### 🤖 **Advanced Model Management**
+- **Quick Model Switcher** - Change models instantly with the ⚡ button in header
+- **Automatic Discovery** - Detects available models from your API
+- **Clean Model Display** - Formatted names with full ID details
+- **Session Persistence** - Remembers your model choice
+
+### ⚙️ **Comprehensive Parameter Controls**
+- **Temperature Control** (0-2) - Adjust creativity vs focus
+- **Top P Sampling** (0-1) - Fine-tune response diversity
+- **Max Tokens** (128-8192) - Control response length
+- **Presence Penalty** (-2 to 2) - Encourage topic exploration
+- **Frequency Penalty** (-2 to 2) - Reduce repetition
+- **System Prompts** - Custom AI instructions with templates
+- **Real-time Adjustment** - Change parameters anytime
+
+### 📄 **RAG (Retrieval-Augmented Generation)**
+- **Document Upload** - 📎 Attach files for context-aware responses
+- **Smart Chunking** - Automatic text segmentation with overlap
+- **Context Retrieval** - Finds relevant document sections automatically
+- **Multiple Documents** - Manage unlimited files
+- **Active/Inactive Toggle** - Control which documents are used
+- **Supported Formats** - .txt, .md, .json, .csv (PDF/DOCX coming soon)
+
+### 💬 **Enhanced Chat Experience**
+- **Streaming Responses** - See AI responses appear in real-time
+- **Markdown Rendering** - Beautiful formatting with syntax highlighting
+- **Code Copy Buttons** - One-click code snippet copying
+- **Message Actions** - Copy, regenerate, and more
+- **Conversation Management** - Unlimited chats with search
+- **Auto-generated Titles** - Smart naming from first message
+- **Keyboard Shortcuts** - Efficient navigation and controls
+
+### 📊 **Real-time Statistics**
+- **Tokens per Second** - Generation speed tracking
+- **Total Tokens** - Track usage in real-time
+- **Time to First Token** - Latency monitoring
+- **Context Window** - See how much context you're using
+
+### 💾 **Complete Data Control**
+- **Export/Import** - Backup and restore everything as JSON
+- **LocalStorage** - All data stays in your browser
+- **Privacy First** - No external servers, completely offline
+- **Clear Data** - Easy reset when needed
 
 ### Technical Highlights
-- Zero build step - runs directly in any modern browser
-- ES6 modules for clean, modular architecture
-- Designed for future expansion (tools, RAG, MCP support)
-- OpenAI-compatible API standardization
+- ✨ Zero build step - runs directly in any modern browser
+- 🎯 Pure vanilla JavaScript - no frameworks or dependencies
+- 📦 Modular ES6 architecture - clean, maintainable code
+- 🚀 Optimized performance - smooth 60fps animations
+- 🔌 OpenAI-compatible API standardization
 
 ## Quick Start
 
@@ -136,21 +177,44 @@ The codebase is designed for extensibility:
 - Comprehensive inline documentation
 - Conventional commit messages
 
-## Future Roadmap
+## Feature Highlights
 
-### Phase 2: Direct Integration
-- Backend service for direct llama.cpp integration
-- Model download and management UI
-- Advanced parameter tuning
-- Quantization options
+### 🎯 What Makes This Special
 
-### Phase 3: Advanced Features
-- Web search integration
-- RAG (Retrieval Augmented Generation) support
-- MCP (Model Context Protocol) support
-- Multi-modal support (images, audio)
-- Conversation branching
-- Collaboration features
+**Inspired by Modern AI Tools**
+- Design influenced by the best AI interfaces (like the YouTuber's setup)
+- Pure black/grey aesthetic for professional, focused work
+- No distracting colors - just content and functionality
+
+**Full-Featured Yet Simple**
+- All the power of advanced AI tools
+- None of the complexity or bloat
+- Works 100% offline and locally
+- Your data never leaves your machine
+
+**Modular & Extensible**
+- Easy to add new features
+- Clean separation of concerns
+- Well-documented codebase
+- Ready for MCP and plugin support
+
+### 📖 Documentation
+
+- **[FEATURES.md](FEATURES.md)** - Complete feature guide with examples
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Technical implementation details
+
+## Future Enhancements
+
+### Planned Features
+- 🔄 Vector embeddings for improved RAG (ChromaDB/Qdrant integration)
+- 🔄 PDF and DOCX parsing (PDF.js, mammoth.js)
+- 🔄 Image generation support
+- 🔄 Multi-modal inputs (vision models)
+- 🔄 Conversation branching and trees
+- 🔄 Export to PDF/Markdown
+- 🔄 Web search integration
+- 🔄 MCP (Model Context Protocol) support
+- 🔄 Plugin system for extensibility
 
 ## Browser Compatibility
 
