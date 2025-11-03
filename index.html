@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LLM WebUI</title>
+  
+  <!-- Styles -->
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/themes.css">
+  <link rel="stylesheet" href="css/components.css">
+  
+  <!-- Highlight.js for code syntax highlighting -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  
+  <!-- Marked.js for markdown rendering -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
+</head>
+<body class="theme-dark">
+  <div class="app-container">
+    <!-- Sidebar -->
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-header">
+        <h1>LLM WebUI</h1>
+        <button id="newChatBtn" class="btn btn-primary" title="New Conversation (Ctrl+N)">
+          + New Chat
+        </button>
+      </div>
+      
+      <div class="sidebar-search">
+        <input 
+          type="text" 
+          id="searchInput" 
+          placeholder="Search conversations..." 
+          class="search-input"
+        >
+      </div>
+      
+      <div id="conversationList" class="conversation-list">
+        <!-- Conversations will be rendered here -->
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- Header -->
+      <header class="chat-header">
+        <button id="sidebarToggle" class="btn-icon mobile-only" title="Toggle Sidebar">
+          ☰
+        </button>
+        <div class="header-title">
+          <span id="currentModel">Chat</span>
+        </div>
+        <button id="settingsBtn" class="btn-icon" title="Settings (Ctrl+,)">
+          ⚙️
+        </button>
+      </header>
+
+      <!-- Stats Bar -->
+      <div id="statsBar" class="stats-bar">
+        <!-- Stats will be rendered here -->
+      </div>
+
+      <!-- Messages Container -->
+      <div id="messagesContainer" class="messages-container">
+        <!-- Messages will be rendered here -->
+      </div>
+
+      <!-- Input Area -->
+      <div class="input-area">
+        <div class="input-wrapper">
+          <textarea 
+            id="messageInput" 
+            placeholder="Type your message... (Shift+Enter for new line)"
+            class="message-input"
+            rows="1"
+          ></textarea>
+          <button id="sendButton" class="btn btn-send" title="Send (Enter)">
+            Send
+          </button>
+        </div>
+      </div>
+    </main>
+
+    <!-- Settings Panel -->
+    <div id="settingsPanel" class="settings-panel">
+      <!-- Settings will be rendered here -->
+    </div>
+  </div>
+
+  <!-- Main Application Script -->
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
