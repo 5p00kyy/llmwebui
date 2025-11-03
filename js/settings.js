@@ -6,6 +6,11 @@
 import storage from './storage.js';
 import { downloadFile, generateUUID } from './utils.js';
 import APIClient from './api.js';
+import { createParameterControlsUI, createSystemPromptUI, createPresetSelectorUI } from './parameters.js';
+import { createDocumentManagerUI } from './rag.js';
+import endpointEditor from './endpointEditor.js';
+import { SettingsRegistry } from './settingsRegistry.js';
+import SettingComponentFactory from './settingsComponents.js';
 
 /**
  * Settings manager class
@@ -15,16 +20,49 @@ class SettingsManager {
     this.panel = null;
     this.isOpen = false;
     this.onSettingsChanged = null;
+    this.parameterManager = null;
+    this.ragManager = null;
+    this.modelManager = null;
+    this.currentSection = 'general';
+    this.searchQuery = '';
+    this.settingsRegistry = null;
   }
 
   /**
    * Initialize settings panel
    * @param {HTMLElement} panel - Settings panel element
    * @param {Function} onSettingsChanged - Callback when settings change
+   * @param {Object} managers - Manager instances
    */
-  initialize(panel, onSettingsChanged) {
+  initialize(panel, onSettingsChanged, managers = {}) {
     this.panel = panel;
     this.onSettingsChanged = onSettingsChanged;
+    this.parameterManager = managers.parameterManager;
+    this.ragManager = managers.ragManager;
+    this.modelManager = managers.modelManager;
+    
+    // Initialize settings registry
+    this.settingsRegistry = new SettingsRegistry(storage);
+    
+    // Initialize endpoint editor
+    endpointEditor.initialize();
+    
+    // Listen for setting changes
+    window.addEventListener('settingChanged', (e) => {
+      // Apply appearance changes immediately
+      if (e.detail.settingId === 'appearance.fontSize') {
+        this.applyFontSize(e.detail.value);
+      } else if (e.detail.settingId === 'appearance.compactMode') {
+        this.applyCompactMode(e.detail.value);
+      } else if (e.detail.settingId === 'appearance.theme') {
+        // Theme is already handled in setupSectionEventListeners
+      }
+      
+      if (this.onSettingsChanged) {
+        this.onSettingsChanged();
+      }
+    });
+    
     this.render();
   }
 
@@ -68,92 +106,533 @@ class SettingsManager {
   render() {
     if (!this.panel) return;
 
-    const settings = storage.getSettings();
-
     const html = `
-      <div class="settings-header">
-        <h2>Settings</h2>
-        <button class="close-btn" id="closeSettings">✕</button>
-      </div>
-
-      <div class="settings-content">
-        <!-- Endpoints Section -->
-        <div class="settings-section">
-          <h3>API Endpoints</h3>
-          <div id="endpointsList"></div>
-          <button class="btn btn-secondary" id="addEndpoint">+ Add Endpoint</button>
-        </div>
-
-        <!-- Model Selection -->
-        <div class="settings-section">
-          <h3>Model Configuration</h3>
-          <div class="form-group">
-            <label for="modelSelect">Default Model:</label>
-            <select id="modelSelect" class="form-control">
-              <option value="">Select a model...</option>
-            </select>
-            <button class="btn btn-secondary btn-sm" id="refreshModels">🔄 Refresh Models</button>
+      <div class="settings-modal">
+        <div class="settings-sidebar">
+          <div class="settings-search">
+            <div class="settings-search-container">
+              <span class="settings-search-icon">🔍</span>
+              <input 
+                type="text" 
+                class="settings-search-input" 
+                placeholder="Search settings..." 
+                id="settingsSearchInput"
+              >
+            </div>
           </div>
-          <div class="form-group">
-            <label for="systemPrompt">System Prompt:</label>
-            <textarea id="systemPrompt" class="form-control" rows="4" placeholder="You are a helpful assistant..."></textarea>
-          </div>
-        </div>
-
-        <!-- Parameters -->
-        <div class="settings-section">
-          <h3>Generation Parameters</h3>
-          <div class="form-group">
-            <label for="temperature">Temperature: <span id="temperatureValue">${settings.preferences.temperature}</span></label>
-            <input type="range" id="temperature" class="form-control-range" min="0" max="2" step="0.1" value="${settings.preferences.temperature}">
-          </div>
-          <div class="form-group">
-            <label for="maxTokens">Max Tokens: <span id="maxTokensValue">${settings.preferences.maxTokens}</span></label>
-            <input type="range" id="maxTokens" class="form-control-range" min="256" max="8192" step="256" value="${settings.preferences.maxTokens}">
-          </div>
-          <div class="form-group">
-            <label for="topP">Top P: <span id="topPValue">${settings.preferences.topP}</span></label>
-            <input type="range" id="topP" class="form-control-range" min="0" max="1" step="0.05" value="${settings.preferences.topP}">
-          </div>
-          <div class="form-group">
-            <label>
-              <input type="checkbox" id="streamingEnabled" ${settings.preferences.streamingEnabled ? 'checked' : ''}>
-              Enable Streaming
-            </label>
+          
+          <div class="settings-nav" id="settingsNav">
+            <div class="settings-nav-item active" data-section="general">
+              <span class="settings-nav-icon">⚙️</span>
+              <span>General</span>
+            </div>
+            <div class="settings-nav-item" data-section="endpoints">
+              <span class="settings-nav-icon">🔌</span>
+              <span>Endpoints</span>
+            </div>
+            <div class="settings-nav-item" data-section="models">
+              <span class="settings-nav-icon">🤖</span>
+              <span>Model Configs</span>
+            </div>
+            <div class="settings-nav-item" data-section="parameters">
+              <span class="settings-nav-icon">🎚️</span>
+              <span>Parameters</span>
+            </div>
+            <div class="settings-nav-item" data-section="rag">
+              <span class="settings-nav-icon">📚</span>
+              <span>RAG Documents</span>
+            </div>
+            <div class="settings-nav-item" data-section="appearance">
+              <span class="settings-nav-icon">🎨</span>
+              <span>Appearance</span>
+            </div>
+            <div class="settings-nav-item" data-section="data">
+              <span class="settings-nav-icon">💾</span>
+              <span>Data</span>
+            </div>
           </div>
         </div>
-
-        <!-- Theme -->
-        <div class="settings-section">
-          <h3>Appearance</h3>
-          <div class="form-group">
-            <label for="themeSelect">Theme:</label>
-            <select id="themeSelect" class="form-control">
-              <option value="dark" ${settings.theme === 'dark' ? 'selected' : ''}>Dark</option>
-              <option value="light" ${settings.theme === 'light' ? 'selected' : ''}>Light</option>
-            </select>
+        
+        <div class="settings-content-area">
+          <div class="settings-header">
+            <h2 id="sectionTitle">General</h2>
+            <button class="close-btn" id="closeSettings">✕</button>
           </div>
-        </div>
 
-        <!-- Data Management -->
-        <div class="settings-section">
-          <h3>Data Management</h3>
-          <button class="btn btn-secondary" id="exportData">📤 Export Data</button>
-          <button class="btn btn-secondary" id="importData">📥 Import Data</button>
-          <button class="btn btn-danger" id="clearData">🗑️ Clear All Data</button>
-          <input type="file" id="importFileInput" accept=".json" style="display: none;">
+          <div class="settings-content" id="settingsContent">
+            <!-- Content sections will be rendered here based on active tab -->
+          </div>
         </div>
       </div>
     `;
 
     this.panel.innerHTML = html;
-    this.renderEndpoints();
-    this.loadModels();
+    this.setupSearch();
+    this.setupTabNavigation();
+    this.showSection('general');
     this.setupEventListeners();
   }
 
   /**
-   * Render endpoints list
+   * Setup search functionality
+   */
+  setupSearch() {
+    const searchInput = document.getElementById('settingsSearchInput');
+    if (!searchInput) return;
+
+    searchInput.addEventListener('input', (e) => {
+      const query = e.target.value.trim();
+      this.searchQuery = query;
+
+      if (query.length === 0) {
+        // Show normal navigation
+        this.showNormalNav();
+        return;
+      }
+
+      // Perform search
+      this.performSearch(query);
+    });
+  }
+
+  /**
+   * Show normal navigation
+   */
+  showNormalNav() {
+    const nav = document.getElementById('settingsNav');
+    if (!nav) return;
+
+    // Restore normal nav items (they're already there)
+    nav.style.display = 'block';
+    
+    // Clear any search results from content area
+    if (this.searchQuery === '') {
+      this.showSection(this.currentSection);
+    }
+  }
+
+  /**
+   * Perform settings search
+   * @param {string} query - Search query
+   */
+  performSearch(query) {
+    if (!this.settingsRegistry) return;
+
+    const results = this.settingsRegistry.search(query);
+    const content = document.getElementById('settingsContent');
+    const title = document.getElementById('sectionTitle');
+
+    if (!content || !title) return;
+
+    title.textContent = `Search Results (${results.length})`;
+
+    if (results.length === 0) {
+      content.innerHTML = `
+        <div class="settings-search-results">
+          <p style="color: var(--text-muted); text-align: center; padding: 2rem;">
+            No settings found matching "${query}"
+          </p>
+        </div>
+      `;
+      return;
+    }
+
+    // Render search results
+    let html = '<div class="settings-search-results">';
+    
+    results.forEach(definition => {
+      const category = this.settingsRegistry.getCategory(definition.category);
+      const categoryLabel = category ? category.label : definition.category;
+
+      html += `
+        <div class="search-result-item" data-setting-id="${definition.id}" data-category="${definition.category}">
+          <div class="search-result-category">${category?.icon || ''} ${categoryLabel}</div>
+          <div class="search-result-label">${definition.label}</div>
+          <div class="search-result-description">${definition.description}</div>
+        </div>
+      `;
+    });
+
+    html += '</div>';
+    content.innerHTML = html;
+
+    // Setup click handlers for search results
+    content.querySelectorAll('.search-result-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const category = item.dataset.category;
+        const settingId = item.dataset.settingId;
+        
+        // Clear search
+        const searchInput = document.getElementById('settingsSearchInput');
+        if (searchInput) {
+          searchInput.value = '';
+          this.searchQuery = '';
+        }
+
+        // Navigate to category
+        this.navigateToSetting(category, settingId);
+      });
+    });
+  }
+
+  /**
+   * Navigate to a specific setting
+   * @param {string} categoryId - Category ID
+   * @param {string} settingId - Setting ID
+   */
+  navigateToSetting(categoryId, settingId) {
+    // Update nav selection
+    const navItems = this.panel.querySelectorAll('.settings-nav-item');
+    navItems.forEach(item => {
+      item.classList.remove('active');
+      if (item.dataset.section === categoryId) {
+        item.classList.add('active');
+      }
+    });
+
+    // Show the section
+    this.showSection(categoryId);
+
+    // Scroll to and highlight the setting
+    setTimeout(() => {
+      const settingElement = document.querySelector(`[data-setting-id="${settingId}"]`);
+      if (settingElement) {
+        settingElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        settingElement.style.animation = 'highlight 2s ease';
+      }
+    }, 100);
+  }
+
+  /**
+   * Setup tab navigation
+   */
+  setupTabNavigation() {
+    const navItems = this.panel.querySelectorAll('.settings-nav-item');
+    navItems.forEach(item => {
+      item.addEventListener('click', () => {
+        const section = item.dataset.section;
+        
+        // Clear search when navigating manually
+        const searchInput = document.getElementById('settingsSearchInput');
+        if (searchInput) {
+          searchInput.value = '';
+          this.searchQuery = '';
+        }
+        
+        // Update active state
+        navItems.forEach(i => i.classList.remove('active'));
+        item.classList.add('active');
+        
+        // Show section
+        this.showSection(section);
+      });
+    });
+  }
+
+  /**
+   * Show specific settings section
+   * @param {string} section - Section name
+   */
+  showSection(section) {
+    const content = document.getElementById('settingsContent');
+    const title = document.getElementById('sectionTitle');
+    if (!content || !title) return;
+
+    this.currentSection = section;
+    const settings = storage.getSettings();
+    
+    const sections = {
+      general: () => this.renderGeneralSection(settings),
+      endpoints: () => this.renderEndpointsSection(settings),
+      models: () => this.renderModelsSection(settings),
+      parameters: () => this.renderParametersSection(),
+      rag: () => this.renderRAGSection(),
+      appearance: () => this.renderAppearanceSection(settings),
+      data: () => this.renderDataSection()
+    };
+
+    const sectionTitles = {
+      general: 'General',
+      endpoints: 'API Endpoints',
+      models: 'Model Configs',
+      parameters: 'Parameters',
+      rag: 'RAG Documents',
+      appearance: 'Appearance',
+      data: 'Data Management'
+    };
+
+    title.textContent = sectionTitles[section] || 'Settings';
+    
+    if (sections[section]) {
+      content.innerHTML = sections[section]();
+      this.setupSectionEventListeners(section);
+    }
+  }
+
+  /**
+   * Render general section
+   */
+  renderGeneralSection(settings) {
+    const generalSettings = this.settingsRegistry.getSettingsForCategory('general');
+    
+    let settingsHTML = '';
+    generalSettings.forEach(definition => {
+      const component = SettingComponentFactory.createComponent(definition, this.settingsRegistry);
+      const element = component.render();
+      settingsHTML += element.outerHTML;
+    });
+
+    return `
+      <div class="settings-section">
+        <h3>About</h3>
+        <div class="form-group">
+          <p>LLM WebUI - A modern, local-first interface for AI models</p>
+          <p style="color: var(--text-secondary); font-size: 0.875rem; margin-top: 0.5rem;">
+            Version 1.0.0 | Dark theme optimized for local AI workflows
+          </p>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>Preferences</h3>
+        ${settingsHTML}
+      </div>
+      
+      <div class="settings-section">
+        <h3>Quick Actions</h3>
+        <button class="btn btn-secondary" id="testConnection">🔌 Test Connection</button>
+      </div>
+    `;
+  }
+
+  /**
+   * Render endpoints section
+   */
+  renderEndpointsSection(settings) {
+    return `
+      <div class="settings-section">
+        <h3>Configured Endpoints</h3>
+        <div id="endpointsList"></div>
+        <button class="btn btn-secondary" id="addEndpoint">+ Add Endpoint</button>
+      </div>
+    `;
+  }
+
+  /**
+   * Render models section
+   */
+  renderModelsSection(settings) {
+    const modelConfigs = storage.getAllModelConfigs();
+    const modelCount = Object.keys(modelConfigs).length;
+
+    return `
+      <div class="settings-section">
+        <h3>Per-Model Configuration</h3>
+        <p style="color: var(--text-secondary); font-size: 0.875rem; margin-bottom: 1rem;">
+          Configure specific parameters for individual models. When a model-specific configuration exists, it will be used instead of the global defaults.
+        </p>
+        
+        <div style="background: var(--bg-tertiary); border: 1px solid var(--border-default); border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem;">
+          <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+            <span style="font-size: 1.25rem;">📊</span>
+            <strong style="font-size: 0.875rem;">Configured Models: ${modelCount}</strong>
+          </div>
+          <p style="color: var(--text-muted); font-size: 0.8125rem; margin: 0;">
+            Models with custom configurations will use their specific settings. All other models use global defaults.
+          </p>
+        </div>
+        
+        <div id="modelConfigsList"></div>
+      </div>
+    `;
+  }
+
+  /**
+   * Render parameters section
+   */
+  renderParametersSection() {
+    return `
+      <div class="settings-section">
+        <div id="presetSelectorContainer"></div>
+      </div>
+
+      <div class="settings-section">
+        <h3>Generation Parameters</h3>
+        <p style="color: var(--text-secondary); font-size: 0.875rem; margin-bottom: 1rem;">
+          Configure default parameters. Enable "Use Server Default" to let your API endpoint's config.yaml control values.
+        </p>
+        <div id="parameterControlsContainer"></div>
+      </div>
+
+      <div class="settings-section">
+        <h3>System Instructions</h3>
+        <div id="systemPromptContainer"></div>
+      </div>
+    `;
+  }
+
+  /**
+   * Render RAG section
+   */
+  renderRAGSection() {
+    return `
+      <div class="settings-section">
+        <h3>Document Management</h3>
+        <div id="documentManagerContainer"></div>
+      </div>
+    `;
+  }
+
+  /**
+   * Render appearance section
+   */
+  renderAppearanceSection(settings) {
+    const appearanceSettings = this.settingsRegistry.getSettingsForCategory('appearance');
+    
+    let settingsHTML = '';
+    appearanceSettings.forEach(definition => {
+      const component = SettingComponentFactory.createComponent(definition, this.settingsRegistry);
+      const element = component.render();
+      settingsHTML += element.outerHTML;
+    });
+
+    return `
+      <div class="settings-section">
+        <h3>Visual Settings</h3>
+        ${settingsHTML}
+      </div>
+    `;
+  }
+
+  /**
+   * Render data section  
+   */
+  renderDataSection() {
+    return `
+      <div class="settings-section">
+        <h3>Export & Import</h3>
+        <button class="btn btn-secondary" id="exportData">📤 Export Data</button>
+        <button class="btn btn-secondary" id="importData">📥 Import Data</button>
+        <input type="file" id="importFileInput" accept=".json" style="display: none;">
+      </div>
+
+      <div class="settings-section">
+        <h3>Danger Zone</h3>
+        <p style="color: var(--text-secondary); font-size: 0.875rem; margin-bottom: 1rem;">
+          This will permanently delete all conversations and reset settings.
+        </p>
+        <button class="btn btn-danger" id="clearData">🗑️ Clear All Data</button>
+      </div>
+    `;
+  }
+
+  /**
+   * Setup section-specific event listeners
+   */
+  setupSectionEventListeners(section) {
+    if (section === 'endpoints') {
+      this.renderEndpoints();
+      
+      const addBtn = document.getElementById('addEndpoint');
+      addBtn?.addEventListener('click', () => this.showAddEndpointDialog());
+    }
+    
+    if (section === 'models') {
+      this.renderModelConfigs();
+    }
+    
+    if (section === 'parameters') {
+      // Render preset selector first
+      if (this.parameterManager) {
+        const presetContainer = document.getElementById('presetSelectorContainer');
+        if (presetContainer) {
+          const presetUI = createPresetSelectorUI(this.parameterManager);
+          presetContainer.appendChild(presetUI);
+        }
+      }
+
+      // Render parameter controls
+      if (this.parameterManager) {
+        const paramContainer = document.getElementById('parameterControlsContainer');
+        if (paramContainer) {
+          const paramUI = createParameterControlsUI(this.parameterManager);
+          paramContainer.appendChild(paramUI);
+        }
+      }
+      
+      // Render system prompt
+      if (this.parameterManager) {
+        const promptContainer = document.getElementById('systemPromptContainer');
+        if (promptContainer) {
+          const promptUI = createSystemPromptUI(this.parameterManager);
+          promptContainer.appendChild(promptUI);
+        }
+      }
+    }
+    
+    if (section === 'rag') {
+      if (this.ragManager) {
+        const docContainer = document.getElementById('documentManagerContainer');
+        if (docContainer) {
+          const docUI = createDocumentManagerUI(this.ragManager);
+          docContainer.appendChild(docUI);
+        }
+      }
+    }
+    
+    if (section === 'appearance') {
+      // Handle theme changes specifically
+      window.addEventListener('settingChanged', (e) => {
+        if (e.detail.settingId === 'appearance.theme') {
+          document.body.className = `theme-${e.detail.value}`;
+        }
+      });
+    }
+    
+    if (section === 'data') {
+      const exportBtn = document.getElementById('exportData');
+      exportBtn?.addEventListener('click', () => this.exportData());
+
+      const importBtn = document.getElementById('importData');
+      const importFileInput = document.getElementById('importFileInput');
+      importBtn?.addEventListener('click', () => importFileInput?.click());
+      importFileInput?.addEventListener('change', (e) => this.importData(e));
+
+      const clearBtn = document.getElementById('clearData');
+      clearBtn?.addEventListener('click', () => this.clearData());
+    }
+    
+    if (section === 'general') {
+      const testBtn = document.getElementById('testConnection');
+      testBtn?.addEventListener('click', () => this.testConnection());
+    }
+  }
+
+  /**
+   * Test API connection
+   */
+  async testConnection() {
+    const endpoint = storage.getActiveEndpoint();
+    if (!endpoint) {
+      alert('No active endpoint configured');
+      return;
+    }
+
+    try {
+      const client = new APIClient(endpoint.url, endpoint.apiKey);
+      const connected = await client.testConnection();
+      if (connected) {
+        alert('✓ Connection successful!');
+      } else {
+        alert('✗ Connection failed');
+      }
+    } catch (error) {
+      alert('✗ Connection error: ' + error.message);
+    }
+  }
+
+  /**
+   * Render endpoints list (called from endpoints section)
    */
   renderEndpoints() {
     const endpointsList = document.getElementById('endpointsList');
@@ -163,12 +642,16 @@ class SettingsManager {
     let html = '';
 
     for (const endpoint of settings.endpoints) {
+      const keyBadge = endpoint.apiKey 
+        ? `<span class="endpoint-key-badge" title="API Key: ${this.maskApiKey(endpoint.apiKey)}">🔑</span>`
+        : '';
+      
       html += `
         <div class="endpoint-item ${endpoint.active ? 'active' : ''}">
           <div class="endpoint-info">
             <input type="radio" name="activeEndpoint" value="${endpoint.id}" ${endpoint.active ? 'checked' : ''}>
             <div class="endpoint-details">
-              <strong>${endpoint.name}</strong>
+              <strong>${endpoint.name} ${keyBadge}</strong>
               <span class="endpoint-url">${endpoint.url}</span>
             </div>
           </div>
@@ -181,195 +664,54 @@ class SettingsManager {
     }
 
     endpointsList.innerHTML = html;
+    
+    // Setup endpoint actions
+    endpointsList.querySelectorAll('[data-action]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const action = btn.dataset.action;
+        const id = btn.dataset.id;
+        
+        if (action === 'edit') this.editEndpoint(id);
+        if (action === 'delete') this.deleteEndpoint(id);
+      });
+    });
+    
+    // Setup active endpoint change
+    endpointsList.querySelectorAll('input[name="activeEndpoint"]').forEach(radio => {
+      radio.addEventListener('change', (e) => {
+        storage.setActiveEndpoint(e.target.value);
+        this.renderEndpoints();
+        if (this.onSettingsChanged) this.onSettingsChanged();
+      });
+    });
   }
 
   /**
-   * Load available models
-   */
-  async loadModels() {
-    const modelSelect = document.getElementById('modelSelect');
-    if (!modelSelect) return;
-
-    try {
-      const endpoint = storage.getActiveEndpoint();
-      if (!endpoint) return;
-
-      const client = new APIClient(endpoint.url);
-      const models = await client.getModels();
-
-      const settings = storage.getSettings();
-      modelSelect.innerHTML = '<option value="">Select a model...</option>';
-      
-      for (const model of models) {
-        const option = document.createElement('option');
-        option.value = model.id;
-        option.textContent = model.name;
-        option.selected = model.id === settings.defaultModel;
-        modelSelect.appendChild(option);
-      }
-
-      // Load system prompt for selected model
-      this.loadSystemPrompt(settings.defaultModel);
-    } catch (error) {
-      console.error('Failed to load models:', error);
-      modelSelect.innerHTML = '<option value="">Failed to load models</option>';
-    }
-  }
-
-  /**
-   * Load system prompt for a model
-   * @param {string} model - Model ID
-   */
-  loadSystemPrompt(model) {
-    const systemPromptField = document.getElementById('systemPrompt');
-    if (!systemPromptField || !model) return;
-
-    const settings = storage.getSettings();
-    systemPromptField.value = settings.systemPrompts[model] || '';
-  }
-
-  /**
-   * Set up event listeners
+   * Setup initial event listeners
    */
   setupEventListeners() {
     // Close button
     const closeBtn = document.getElementById('closeSettings');
     closeBtn?.addEventListener('click', () => this.close());
-
-    // Add endpoint
-    const addEndpointBtn = document.getElementById('addEndpoint');
-    addEndpointBtn?.addEventListener('click', () => this.showAddEndpointDialog());
-
-    // Endpoint actions
-    const endpointsList = document.getElementById('endpointsList');
-    endpointsList?.addEventListener('click', (e) => {
-      const target = e.target.closest('[data-action]');
-      if (!target) return;
-
-      const action = target.dataset.action;
-      const id = target.dataset.id;
-
-      if (action === 'edit') this.editEndpoint(id);
-      if (action === 'delete') this.deleteEndpoint(id);
-    });
-
-    // Active endpoint radio buttons
-    endpointsList?.addEventListener('change', (e) => {
-      if (e.target.name === 'activeEndpoint') {
-        storage.setActiveEndpoint(e.target.value);
-        this.renderEndpoints();
-        this.loadModels();
-        if (this.onSettingsChanged) this.onSettingsChanged();
+    
+    // Click outside to close
+    this.panel?.addEventListener('click', (e) => {
+      if (e.target === this.panel) {
+        this.close();
       }
     });
-
-    // Model selection
-    const modelSelect = document.getElementById('modelSelect');
-    modelSelect?.addEventListener('change', (e) => {
-      const settings = storage.getSettings();
-      settings.defaultModel = e.target.value;
-      storage.saveSettings(settings);
-      this.loadSystemPrompt(e.target.value);
-      if (this.onSettingsChanged) this.onSettingsChanged();
-    });
-
-    // Refresh models
-    const refreshModelsBtn = document.getElementById('refreshModels');
-    refreshModelsBtn?.addEventListener('click', () => this.loadModels());
-
-    // System prompt
-    const systemPrompt = document.getElementById('systemPrompt');
-    systemPrompt?.addEventListener('change', (e) => {
-      const settings = storage.getSettings();
-      const model = settings.defaultModel;
-      if (model) {
-        settings.systemPrompts[model] = e.target.value;
-        storage.saveSettings(settings);
-      }
-    });
-
-    // Temperature
-    const temperature = document.getElementById('temperature');
-    const temperatureValue = document.getElementById('temperatureValue');
-    temperature?.addEventListener('input', (e) => {
-      const value = parseFloat(e.target.value);
-      temperatureValue.textContent = value;
-      const settings = storage.getSettings();
-      settings.preferences.temperature = value;
-      storage.saveSettings(settings);
-    });
-
-    // Max tokens
-    const maxTokens = document.getElementById('maxTokens');
-    const maxTokensValue = document.getElementById('maxTokensValue');
-    maxTokens?.addEventListener('input', (e) => {
-      const value = parseInt(e.target.value);
-      maxTokensValue.textContent = value;
-      const settings = storage.getSettings();
-      settings.preferences.maxTokens = value;
-      storage.saveSettings(settings);
-    });
-
-    // Top P
-    const topP = document.getElementById('topP');
-    const topPValue = document.getElementById('topPValue');
-    topP?.addEventListener('input', (e) => {
-      const value = parseFloat(e.target.value);
-      topPValue.textContent = value;
-      const settings = storage.getSettings();
-      settings.preferences.topP = value;
-      storage.saveSettings(settings);
-    });
-
-    // Streaming
-    const streamingEnabled = document.getElementById('streamingEnabled');
-    streamingEnabled?.addEventListener('change', (e) => {
-      const settings = storage.getSettings();
-      settings.preferences.streamingEnabled = e.target.checked;
-      storage.saveSettings(settings);
-    });
-
-    // Theme
-    const themeSelect = document.getElementById('themeSelect');
-    themeSelect?.addEventListener('change', (e) => {
-      const settings = storage.getSettings();
-      settings.theme = e.target.value;
-      storage.saveSettings(settings);
-      document.body.className = `theme-${e.target.value}`;
-    });
-
-    // Export data
-    const exportBtn = document.getElementById('exportData');
-    exportBtn?.addEventListener('click', () => this.exportData());
-
-    // Import data
-    const importBtn = document.getElementById('importData');
-    const importFileInput = document.getElementById('importFileInput');
-    importBtn?.addEventListener('click', () => importFileInput?.click());
-    importFileInput?.addEventListener('change', (e) => this.importData(e));
-
-    // Clear data
-    const clearBtn = document.getElementById('clearData');
-    clearBtn?.addEventListener('click', () => this.clearData());
   }
 
   /**
    * Show add endpoint dialog
    */
   showAddEndpointDialog() {
-    const name = prompt('Endpoint Name:', 'My Endpoint');
-    if (!name) return;
-
-    const url = prompt('Endpoint URL:', 'http://localhost:8080/v1');
-    if (!url) return;
-
-    storage.addEndpoint({
-      name,
-      url: url.trim(),
-      active: false
+    endpointEditor.openNew(() => {
+      this.renderEndpoints();
+      if (this.onSettingsChanged) {
+        this.onSettingsChanged();
+      }
     });
-
-    this.renderEndpoints();
   }
 
   /**
@@ -377,25 +719,16 @@ class SettingsManager {
    * @param {string} endpointId - Endpoint ID
    */
   editEndpoint(endpointId) {
-    const settings = storage.getSettings();
-    const endpoint = settings.endpoints.find(e => e.id === endpointId);
-    if (!endpoint) return;
-
-    const name = prompt('Endpoint Name:', endpoint.name);
-    if (name === null) return;
-
-    const url = prompt('Endpoint URL:', endpoint.url);
-    if (url === null) return;
-
-    storage.updateEndpoint(endpointId, {
-      name: name.trim(),
-      url: url.trim()
+    endpointEditor.openEdit(endpointId, () => {
+      this.renderEndpoints();
+      
+      // Check if edited endpoint was active
+      const settings = storage.getSettings();
+      const endpoint = settings.endpoints.find(e => e.id === endpointId);
+      if (endpoint?.active && this.onSettingsChanged) {
+        this.onSettingsChanged();
+      }
     });
-
-    this.renderEndpoints();
-    if (endpoint.active && this.onSettingsChanged) {
-      this.onSettingsChanged();
-    }
   }
 
   /**
@@ -422,7 +755,6 @@ class SettingsManager {
 
   /**
    * Import data
-   * @param {Event} event - File input change event
    */
   async importData(event) {
     const file = event.target.files[0];
@@ -471,6 +803,159 @@ class SettingsManager {
     } else {
       alert('Failed to clear data');
     }
+  }
+
+  /**
+   * Render model configurations list
+   */
+  renderModelConfigs() {
+    const modelConfigsList = document.getElementById('modelConfigsList');
+    if (!modelConfigsList) return;
+
+    const modelConfigs = storage.getAllModelConfigs();
+    
+    if (Object.keys(modelConfigs).length === 0) {
+      modelConfigsList.innerHTML = `
+        <div style="text-align: center; padding: 2rem; color: var(--text-muted);">
+          <p style="font-size: 0.875rem;">No model-specific configurations yet.</p>
+          <p style="font-size: 0.8125rem; margin-top: 0.5rem;">Configure parameters for a specific model by selecting it and clicking "Save for This Model" in the Parameters section.</p>
+        </div>
+      `;
+      return;
+    }
+
+    let html = '';
+    
+    for (const [modelId, config] of Object.entries(modelConfigs)) {
+      const updatedDate = config.updated ? new Date(config.updated).toLocaleDateString() : 'Unknown';
+      
+      html += `
+        <div class="endpoint-item" style="margin-bottom: 1rem;">
+          <div class="endpoint-info" style="flex-direction: column; align-items: flex-start; gap: 0.5rem;">
+            <div style="width: 100%;">
+              <strong style="font-size: 0.9375rem;">🤖 ${modelId}</strong>
+              <div style="font-size: 0.8125rem; color: var(--text-muted); margin-top: 0.25rem;">
+                Updated: ${updatedDate}
+              </div>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.5rem; width: 100%; font-size: 0.8125rem;">
+              <div>
+                <span style="color: var(--text-muted);">Temperature:</span>
+                <strong> ${config.temperature ?? 'Default'}</strong>
+              </div>
+              <div>
+                <span style="color: var(--text-muted);">Top P:</span>
+                <strong> ${config.topP ?? 'Default'}</strong>
+              </div>
+              <div>
+                <span style="color: var(--text-muted);">Max Tokens:</span>
+                <strong> ${config.maxTokens ?? 'Default'}</strong>
+              </div>
+              <div>
+                <span style="color: var(--text-muted);">System Prompt:</span>
+                <strong> ${config.systemPrompt ? 'Custom' : 'None'}</strong>
+              </div>
+            </div>
+          </div>
+          <div class="endpoint-actions">
+            <button class="btn-icon" data-action="edit-model" data-model-id="${modelId}" title="Edit Configuration">✏️</button>
+            <button class="btn-icon" data-action="delete-model" data-model-id="${modelId}" title="Delete Configuration">🗑️</button>
+          </div>
+        </div>
+      `;
+    }
+
+    modelConfigsList.innerHTML = html;
+
+    // Setup action handlers
+    modelConfigsList.querySelectorAll('[data-action="edit-model"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const modelId = btn.dataset.modelId;
+        this.editModelConfig(modelId);
+      });
+    });
+    
+    modelConfigsList.querySelectorAll('[data-action="delete-model"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const modelId = btn.dataset.modelId;
+        if (confirm(`Delete configuration for model "${modelId}"?\n\nThis model will use global defaults after deletion.`)) {
+          storage.deleteModelConfig(modelId);
+          this.renderModelConfigs();
+          window.dispatchEvent(new Event('modelConfigsUpdated'));
+        }
+      });
+    });
+  }
+
+  /**
+   * Edit model configuration
+   * @param {string} modelId - Model ID
+   */
+  editModelConfig(modelId) {
+    const config = storage.getModelConfig(modelId);
+    if (!config) return;
+    
+    // Switch to parameters tab
+    const navItems = this.panel.querySelectorAll('.settings-nav-item');
+    navItems.forEach(item => {
+      item.classList.remove('active');
+      if (item.dataset.section === 'parameters') {
+        item.classList.add('active');
+      }
+    });
+    
+    this.showSection('parameters');
+    
+    // Switch parameterManager to this model
+    if (this.parameterManager) {
+      this.parameterManager.switchToModel(modelId);
+      
+      // Notify that model was changed
+      window.dispatchEvent(new CustomEvent('modelChanged', { 
+        detail: { modelId } 
+      }));
+    }
+    
+    // Show notification
+    setTimeout(() => {
+      const statusDiv = document.getElementById('modelConfigStatus');
+      if (statusDiv) {
+        statusDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        statusDiv.style.animation = 'highlight 2s ease';
+      }
+    }, 300);
+  }
+
+  /**
+   * Apply font size setting
+   * @param {string} fontSize - Font size value (small, medium, large)
+   */
+  applyFontSize(fontSize) {
+    document.body.classList.remove('font-size-small', 'font-size-medium', 'font-size-large');
+    document.body.classList.add(`font-size-${fontSize}`);
+  }
+
+  /**
+   * Apply compact mode setting
+   * @param {boolean} enabled - Whether compact mode is enabled
+   */
+  applyCompactMode(enabled) {
+    if (enabled) {
+      document.body.classList.add('compact-mode');
+    } else {
+      document.body.classList.remove('compact-mode');
+    }
+  }
+
+  /**
+   * Mask API key for display
+   * @param {string} apiKey - API key to mask
+   * @returns {string} Masked key
+   */
+  maskApiKey(apiKey) {
+    if (!apiKey) return '';
+    if (apiKey.length <= 12) return '***' + apiKey.substring(apiKey.length - 4);
+    return apiKey.substring(0, 8) + '...' + apiKey.substring(apiKey.length - 4);
   }
 }
 
