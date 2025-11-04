@@ -6,7 +6,7 @@
 import storage from './storage.js';
 import chat from './chat.js';
 import sidebar from './sidebar.js';
-import settings from './settings.js';
+import settingsSidebar from './settingsSidebar.js';
 import stats from './stats.js';
 import APIClient, { createClientFromStorage } from './api.js';
 import { ModelManager, createModelSelectorUI } from './models.js';
@@ -93,9 +93,9 @@ class App {
       () => this.newConversation()
       );
 
-      // Initialize settings panel with new features
-      settings.initialize(
-        document.getElementById('settingsPanel'),
+      // Initialize settings sidebar
+      settingsSidebar.initialize(
+        document.getElementById('settingsSidebar'),
         () => this.onSettingsChanged(),
         {
           parameterManager: this.parameterManager,
@@ -110,7 +110,7 @@ class App {
         searchConversations: () => this.focusSearch(),
         switchModel: () => this.focusModelSelect(),
         toggleSidebar: () => this.toggleSidebar(),
-        openSettings: () => settings.open(),
+        openSettings: () => settingsSidebar.toggle(),
         exportConversation: () => this.exportCurrentConversation(),
         toggleStats: () => this.toggleStats()
       });
@@ -146,7 +146,7 @@ class App {
     // Settings button
     const settingsBtn = document.getElementById('settingsBtn');
     if (settingsBtn) {
-      settingsBtn.addEventListener('click', () => settings.toggle());
+      settingsBtn.addEventListener('click', () => settingsSidebar.toggle());
     }
 
     // Sidebar toggle - for mobile and desktop collapse
@@ -202,13 +202,13 @@ class App {
       // Ctrl/Cmd + , - Settings
       if ((e.ctrlKey || e.metaKey) && e.key === ',') {
         e.preventDefault();
-        settings.toggle();
+        settingsSidebar.toggle();
       }
 
       // Escape - Close modals
       if (e.key === 'Escape') {
-        if (settings.isOpen) {
-          settings.close();
+        if (settingsSidebar.isOpen) {
+          settingsSidebar.close();
         }
       }
     });
@@ -239,7 +239,7 @@ class App {
     
     if (!model) {
       this.showError('Please select a model in settings first');
-      settings.open();
+      settingsSidebar.open();
       return;
     }
 

@@ -672,16 +672,18 @@ class ChatManager {
     const chatContainer = this.messagesContainer.parentElement;
     if (!chatContainer) return;
     
-    // Use requestAnimationFrame for smooth, performant scrolling
-    requestAnimationFrame(() => {
-      const targetScroll = chatContainer.scrollHeight;
-      const currentScroll = chatContainer.scrollTop;
-      
-      // Only scroll if we're not already at the bottom
-      if (targetScroll - currentScroll > 5) {
-        chatContainer.scrollTop = targetScroll;
-      }
-    });
+    // Use setTimeout + requestAnimationFrame for better timing
+    setTimeout(() => {
+      requestAnimationFrame(() => {
+        // Scroll to absolute bottom with extra margin
+        const scrollHeight = chatContainer.scrollHeight;
+        const clientHeight = chatContainer.clientHeight;
+        const maxScroll = scrollHeight - clientHeight;
+        
+        // Always scroll to the very bottom during streaming
+        chatContainer.scrollTop = maxScroll + 100; // Add buffer
+      });
+    }, 0);
   }
 
   /**
